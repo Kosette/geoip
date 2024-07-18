@@ -3,7 +3,6 @@ package special
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 
@@ -34,10 +33,6 @@ func newStdin(action lib.Action, data json.RawMessage) (lib.InputConverter, erro
 		if err := json.Unmarshal(data, &tmp); err != nil {
 			return nil, err
 		}
-	}
-
-	if tmp.Name == "" {
-		return nil, fmt.Errorf("type %s | action %s missing name", typeStdin, action)
 	}
 
 	return &stdin{
@@ -86,8 +81,15 @@ func (s *stdin) Input(container lib.Container) (lib.Container, error) {
 			continue
 		}
 
-		if err := entry.AddPrefix(line); err != nil {
-			continue
+		switch s.Action {
+		case lib.ActionAdd:
+			if err := entry.AddPrefix(line); err != nil {
+				continue
+			}
+		case lib.ActionRemove:
+			if err := entry.RemovePrefix(line); err != nil {
+				continue
+			}
 		}
 	}
 
@@ -103,17 +105,8 @@ func (s *stdin) Input(container lib.Container) (lib.Container, error) {
 		ignoreIPType = lib.IgnoreIPv4
 	}
 
-	switch s.Action {
-	case lib.ActionAdd:
-		if err := container.Add(entry, ignoreIPType); err != nil {
-			return nil, err
-		}
-	case lib.ActionRemove:
-		if err := container.Remove(entry, lib.CaseRemovePrefix, ignoreIPType); err != nil {
-			return nil, err
-		}
-	default:
-		return nil, lib.ErrUnknownAction
+	if err := container.Add(entry, ignoreIPType); err != nil {
+		return nil, err
 	}
 
 	return container, nil

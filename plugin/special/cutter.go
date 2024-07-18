@@ -89,9 +89,7 @@ func (c *cutter) Input(container lib.Container) (lib.Container, error) {
 		if len(wantList) > 0 && !wantList[name] {
 			continue
 		}
-		if err := container.Remove(entry, lib.CaseRemoveEntry, ignoreIPType); err != nil {
-			return nil, err
-		}
+		container.Remove(name, ignoreIPType)
 	}
 
 	return container, nil
