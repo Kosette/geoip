@@ -1,6 +1,10 @@
 name: Build geoip files
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Delete release"]
+    types:
+      - completed
   schedule:
     - cron: "0 0 * * 5"
   push:
@@ -12,6 +16,7 @@ on:
       - "LICENSE"
       - "README.md"
       - ".github/dependabot.yml"
+      
 jobs:
   build:
     name: Build
