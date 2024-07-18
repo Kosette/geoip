@@ -3,6 +3,8 @@ package maxmind
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,8 @@ const (
 
 var (
 	defaultMMDBFile = filepath.Join("./", "geolite2", "GeoLite2-Country.mmdb")
+	tempMMDBPath    = filepath.Join("./", "tmp")
+	tempMMDBFile    = filepath.Join(tempMMDBPath, "input.mmdb")
 )
 
 func init() {
@@ -78,20 +82,26 @@ func (g *maxmindMMDBIn) GetDescription() string {
 }
 
 func (g *maxmindMMDBIn) Input(container lib.Container) (lib.Container, error) {
-	var content []byte
+	var fd io.ReadCloser
 	var err error
 	switch {
 	case strings.HasPrefix(strings.ToLower(g.URI), "http://"), strings.HasPrefix(strings.ToLower(g.URI), "https://"):
-		content, err = lib.GetRemoteURLContent(g.URI)
+		fd, err = g.downloadFile(g.URI)
 	default:
-		content, err = os.ReadFile(g.URI)
+		fd, err = os.Open(g.URI)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	err = g.moveFile(fd)
 	if err != nil {
 		return nil, err
 	}
 
 	entries := make(map[string]*lib.Entry)
-	err = g.generateEntries(content, entries)
+	err = g.generateEntries(entries)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +149,40 @@ func (g *maxmindMMDBIn) Input(container lib.Container) (lib.Container, error) {
 	return container, nil
 }
 
-func (g *maxmindMMDBIn) generateEntries(content []byte, entries map[string]*lib.Entry) error {
-	db, err := maxminddb.FromBytes(content)
+func (g *maxmindMMDBIn) downloadFile(url string) (io.ReadCloser, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get remote file %s, http status code %d", url, resp.StatusCode)
+	}
+
+	return resp.Body, nil
+}
+
+func (g *maxmindMMDBIn) moveFile(src io.ReadCloser) error {
+	defer src.Close()
+
+	err := os.MkdirAll(tempMMDBPath, 0755)
+	if err != nil {
+		return err
+	}
+
+	out, err := os.Create(tempMMDBFile)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, src)
+
+	return err
+}
+
+func (g *maxmindMMDBIn) generateEntries(entries map[string]*lib.Entry) error {
+	db, err := maxminddb.Open(tempMMDBFile)
 	if err != nil {
 		return err
 	}
