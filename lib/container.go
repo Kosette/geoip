@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"fmt"
+	"log"
 	"strings"
+	"sync"
 
 	"go4.org/netipx"
 )
@@ -10,41 +11,45 @@ import (
 type Container interface {
 	GetEntry(name string) (*Entry, bool)
 	Add(entry *Entry, opts ...IgnoreIPOption) error
-	Remove(entry *Entry, rCase CaseRemove, opts ...IgnoreIPOption) error
+	Remove(name string, opts ...IgnoreIPOption)
 	Loop() <-chan *Entry
 }
 
 type container struct {
-	entries map[string]*Entry
+	entries *sync.Map // map[name]*Entry
 }
 
 func NewContainer() Container {
 	return &container{
-		entries: make(map[string]*Entry),
+		entries: new(sync.Map),
 	}
 }
 
 func (c *container) isValid() bool {
-	return c.entries != nil
+	if c == nil || c.entries == nil {
+		return false
+	}
+	return true
 }
 
 func (c *container) GetEntry(name string) (*Entry, bool) {
 	if !c.isValid() {
 		return nil, false
 	}
-	val, ok := c.entries[strings.ToUpper(strings.TrimSpace(name))]
+	val, ok := c.entries.Load(strings.ToUpper(strings.TrimSpace(name)))
 	if !ok {
 		return nil, false
 	}
-	return val, true
+	return val.(*Entry), true
 }
 
 func (c *container) Loop() <-chan *Entry {
 	ch := make(chan *Entry, 300)
 	go func() {
-		for _, val := range c.entries {
-			ch <- val
-		}
+		c.entries.Range(func(key, value any) bool {
+			ch <- value.(*Entry)
+			return true
+		})
 		close(ch)
 	}()
 	return ch
@@ -60,7 +65,6 @@ func (c *container) Add(entry *Entry, opts ...IgnoreIPOption) error {
 
 	name := entry.GetName()
 	val, found := c.GetEntry(name)
-
 	switch found {
 	case true:
 		var ipv4set, ipv6set *netipx.IPSet
@@ -98,6 +102,7 @@ func (c *container) Add(entry *Entry, opts ...IgnoreIPOption) error {
 			val.ipv4Builder.AddSet(ipv4set)
 			val.ipv6Builder.AddSet(ipv6set)
 		}
+		c.entries.Store(name, val)
 
 	case false:
 		switch ignoreIPType {
@@ -106,17 +111,17 @@ func (c *container) Add(entry *Entry, opts ...IgnoreIPOption) error {
 		case IPv6:
 			entry.ipv6Builder = nil
 		}
-		c.entries[name] = entry
+		c.entries.Store(name, entry)
 	}
 
 	return nil
 }
 
-func (c *container) Remove(entry *Entry, rCase CaseRemove, opts ...IgnoreIPOption) error {
-	name := entry.GetName()
+func (c *container) Remove(name string, opts ...IgnoreIPOption) {
 	val, found := c.GetEntry(name)
 	if !found {
-		return fmt.Errorf("entry %s not found", name)
+		log.Printf("failed to remove non-existent entry %s", name)
+		return
 	}
 
 	var ignoreIPType IPType
@@ -126,58 +131,14 @@ func (c *container) Remove(entry *Entry, rCase CaseRemove, opts ...IgnoreIPOptio
 		}
 	}
 
-	switch rCase {
-	case CaseRemovePrefix:
-		var ipv4set, ipv6set *netipx.IPSet
-		var err4, err6 error
-		if entry.hasIPv4Builder() {
-			ipv4set, err4 = entry.ipv4Builder.IPSet()
-			if err4 != nil {
-				return err4
-			}
-		}
-		if entry.hasIPv6Builder() {
-			ipv6set, err6 = entry.ipv6Builder.IPSet()
-			if err6 != nil {
-				return err6
-			}
-		}
-
-		switch ignoreIPType {
-		case IPv4:
-			if !val.hasIPv6Builder() {
-				val.ipv6Builder = new(netipx.IPSetBuilder)
-			}
-			val.ipv6Builder.RemoveSet(ipv6set)
-		case IPv6:
-			if !val.hasIPv4Builder() {
-				val.ipv4Builder = new(netipx.IPSetBuilder)
-			}
-			val.ipv4Builder.RemoveSet(ipv4set)
-		default:
-			if !val.hasIPv4Builder() {
-				val.ipv4Builder = new(netipx.IPSetBuilder)
-			}
-			if !val.hasIPv6Builder() {
-				val.ipv6Builder = new(netipx.IPSetBuilder)
-			}
-			val.ipv4Builder.RemoveSet(ipv4set)
-			val.ipv6Builder.RemoveSet(ipv6set)
-		}
-
-	case CaseRemoveEntry:
-		switch ignoreIPType {
-		case IPv4:
-			val.ipv6Builder = nil
-		case IPv6:
-			val.ipv4Builder = nil
-		default:
-			delete(c.entries, name)
-		}
-
+	switch ignoreIPType {
+	case IPv4:
+		val.ipv6Builder = nil
+		c.entries.Store(name, val)
+	case IPv6:
+		val.ipv4Builder = nil
+		c.entries.Store(name, val)
 	default:
-		return fmt.Errorf("unknown remove case %d", rCase)
+		c.entries.Delete(name)
 	}
-
-	return nil
 }
