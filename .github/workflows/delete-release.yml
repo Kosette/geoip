@@ -13,6 +13,7 @@ jobs:
           fetch-depth: 0
 
       - name: Remove
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
         run: |
           gh release list --limit 100 -R Kosette/geoip | ForEach-Object { $_.Split("`t")[2] } | ForEach-Object { gh release delete --cleanup-tag -R Kosette/geoip -y $_ }
-      
