@@ -13,8 +13,7 @@
       "type": "cutter",
       "action": "remove",
       "args": {
-        "wantedList": ["cn"],
-        "onlyIPType": "ipv4"
+        "wantedList": ["cn"]
       }
     },
     {
@@ -346,10 +345,7 @@
     },
     {
       "type": "surgeRuleSet",
-      "action": "output",
-      "args": {
-        "addSuffixInLine": ",no-resolve"
-      }
+      "action": "output"
     }
   ]
 }

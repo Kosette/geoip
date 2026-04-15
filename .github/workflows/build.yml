@@ -115,9 +115,8 @@ jobs:
           rm -rf ./output/GeoLite2-*.sha256sum
           rm -rf ./output/{clash,dat,mrs,nginx,srs,surge,text}
 
-      - name: Upload
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ./output/*mmdb*
-          tag_name: ${{ env.TAG_NAME }}
+      - name: Upload files to GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ env.TAG_NAME }} --title "${{ env.RELEASE_NAME }}" ./output/*
